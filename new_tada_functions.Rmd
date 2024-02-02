@@ -1,0 +1,69 @@
+---
+title: "New TADA Functions"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      error = FALSE,
+                      message = FALSE)
+
+# load in all necessary packages
+source("src/setup.R")
+#... currently: "TADA", "tidyverse", "sf", "TADA", "urltools", "geojsonsf", "leaflet", "viridis"
+```
+
+This RMD describes a suite of {{**currently** **in-development**}} functions to fulfill the following TADA Module 2 goal:
+
+*Match WQP sites with ATTAINS assessment units. Assist user with reviewing sites and AUs on a map and deciding to keep or exclude sites (systematically first, maybe using catchments as a buffer around the AU points/line/polygons for consistency, and then let users make manual edits to include or exclude sites (main requirement)). Consider adding option to create new AUs for new areas where WQP sites are available but no AU exists yet (secondary requirement). Output is a simple spreadsheet linking ATTAINS AU IDs with WQP Location IDs.*  
+
+### A note about ATTAINS
+
+ATTAINS is an online platform that organizes and combines each state’s Clean Water Act reporting data into a single data repository. The geospatial component of ATTAINS includes spatial representations of each state’s assessment units as well as their assigned designated uses, their most recent EPA reporting category (i.e., their impairment status), their impaired designated uses, and the parameter(s) causing the impairment.
+
+Within an assessment unit, the water quality standards remain the same and all water features are assessed as one entity. Depending on the state, these assessment units can be a specific point along a river, a river reach, an entire river, or even an entire watershed. (In other words, assessment units can take the form of point, line, and area features, or some combination of all of them.) Moreover, it is possible that some assessment units are not geospatially referenced at all, meaning they are not captured in the ATTAINS geospatial database.
+
+## `TADA_GetATTAINS()`
+
+This function pulls in ATTAINS data from the [EPA's ATTAINS Assessment Geospatial Service](https://www.epa.gov/waterdata/get-data-access-public-attains-data#AttainsGeo) and links it to TADA-pulled Water Quality Portal (WQP) observations. For the function to work properly, the input data frame must have - at a minimum - WQP observation coordinates in "TADA.LongitudeMeasure" and "TADA.LatitudeMeasure" columns. This function plays nice with TADA's current `TADA_DataRetrieval()` function.
+
+The function returns a data frame containing the original TADA WQP dataset, plus new columns representing the ATTAINS assessment unit(s) that fall within the same NHDPlus HR catchment as them. This means that it is possible for a single TADA WQP observation to have multiple ATTAINS assessment units linked to it and subsequently more than one row of data. Such WQP observations can be identified using the \`index\` column.
+
+```{r}
+source("src/TADA_GetATTAINS.R")
+
+# For testing, make some TADA_DataRetrieval calls:
+TADA_dataset_1 <- TADA_DataRetrieval(startDate = "2020-06-01",
+                                   endDate = "2020-08-05",
+                                   characteristicName = "pH",
+                                   countycode = "US:51:069")
+TADA_dataset_2 <- TADA_DataRetrieval(startDate = "2020-06-01",
+                                   endDate = "2020-08-05",
+                                   characteristicName = "pH",
+                                   countycode = "US:08:069")
+
+test_it_once <- TADA_GetATTAINS(data = TADA_dataset_1)
+
+test_it_twice <- TADA_GetATTAINS(data = TADA_dataset_2)
+```
+
+## `TADA_ViewATTAINS()`
+
+This function visualizes the raw ATTAINS features that are linked to the TADA WQP observations. (Essentially, this maps the same data listed from running `TADA_GetATTAINS()`.) For the function to work properly, the input data frame must have - at a minimum - WQP observation coordinates in "TADA.LongitudeMeasure" and "TADA.LatitudeMeasure" columns. This function also plays nice with TADA's current `TADA_DataRetrieval()` function.
+
+```{r}
+source("src/TADA_ViewATTAINS.R")
+
+TADA_ViewATTAINS(data = TADA_dataset_1)
+```
+
+```{r}
+TADA_ViewATTAINS(data = TADA_dataset_2)
+```
