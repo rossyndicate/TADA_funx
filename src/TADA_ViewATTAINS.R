@@ -45,7 +45,7 @@ TADA_ViewATTAINS <- function(data){
         urltools::param_set(key = "returnZ", value = "false") %>%
         urltools::param_set(key = "returnM", value = "false") %>%
         urltools::param_set(key = "returnDistinctValues", value = "false") %>%
-        urltools::  param_set(key = "returnExtentOnly", value = "false") %>%
+        urltools::param_set(key = "returnExtentOnly", value = "false") %>%
         urltools::param_set(key = "featureEncoding", value = "esriDefault")
       
       final_sf <- geojsonsf::geojson_sf(query)
