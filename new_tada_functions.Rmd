@@ -18,7 +18,9 @@ knitr::opts_chunk$set(echo = FALSE,
 # load in all necessary packages
 source("src/setup.R")
 #... currently: "TADA", "tidyverse", "sf", "TADA", "urltools", "geojsonsf", "leaflet", "viridis"
-```
+
+# load library for testing
+library(TADA)
 
 This RMD describes a suite of {{**currently** **in-development**}} functions to fulfill the following TADA Module 2 goal:
 
