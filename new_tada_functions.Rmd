@@ -22,7 +22,7 @@ source("src/setup.R")
 
 This RMD describes a suite of {{**currently** **in-development**}} functions to fulfill the following TADA Module 2 goal:
 
-*Match WQP sites with ATTAINS assessment units. Assist user with reviewing sites and AUs on a map and deciding to keep or exclude sites (systematically first, maybe using catchments as a buffer around the AU points/line/polygons for consistency, and then let users make manual edits to include or exclude sites (main requirement)). Consider adding option to create new AUs for new areas where WQP sites are available but no AU exists yet (secondary requirement). Output is a simple spreadsheet linking ATTAINS AU IDs with WQP Location IDs.*  
+*Match WQP sites with ATTAINS assessment units. Assist user with reviewing sites and Assessment Units (AUs) on a map and deciding to keep or exclude sites (systematically first, maybe using catchments as a buffer around the AU points/line/polygons for consistency, and then let users make manual edits to include or exclude sites (main requirement)). Consider adding option to create new AUs for new areas where WQP sites are available but no AU exists yet (secondary requirement). Output is a simple spreadsheet linking ATTAINS AU IDs with WQP Location IDs.*  
 
 ### A note about ATTAINS
 
