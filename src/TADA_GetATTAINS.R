@@ -56,7 +56,7 @@ TADA_GetATTAINS <- function(data){
     nearby_catchments <- geojsonsf::geojson_sf(query) %>%
       # remove unnecessary columns:
       dplyr::select(-c(OBJECTID, GLOBALID)) %>%
-      .[TADA_DataRetrieval_data,] %>%
+      .[TADA_DataRetrieval_data, ] %>%
       dplyr::rename_with(~ paste0("ATTAINS.", .), dplyr::everything()) %>%
       dplyr::distinct(.keep_all = TRUE)
     
