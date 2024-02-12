@@ -21,6 +21,7 @@ source("src/setup.R")
 
 # load library for testing
 library(TADA)
+```
 
 This RMD describes a suite of {{**currently** **in-development**}} functions to fulfill the following TADA Module 2 goal:
 
@@ -46,14 +47,23 @@ TADA_dataset_1 <- TADA_DataRetrieval(startDate = "2020-06-01",
                                    endDate = "2020-08-05",
                                    characteristicName = "pH",
                                    countycode = "US:51:069")
+
 TADA_dataset_2 <- TADA_DataRetrieval(startDate = "2020-06-01",
                                    endDate = "2020-08-05",
                                    characteristicName = "pH",
+                                   countycode = "US:08:069")
+# New example for testing:
+TADA_dataset_3 <- TADA_DataRetrieval(startDate = "2020-06-01",
+                                   endDate = "2020-08-05",
+                                   characteristicName = "Fecal Coliform",
                                    countycode = "US:08:069")
 
 test_it_once <- TADA_GetATTAINS(data = TADA_dataset_1)
 
 test_it_twice <- TADA_GetATTAINS(data = TADA_dataset_2)
+
+# This example doesn't work! 
+test_it_thrice <- TADA_GetATTAINS(data = TADA_dataset_3)
 ```
 
 ## `TADA_ViewATTAINS()`
@@ -64,8 +74,9 @@ This function visualizes the raw ATTAINS features that are linked to the TADA WQ
 source("src/TADA_ViewATTAINS.R")
 
 TADA_ViewATTAINS(data = TADA_dataset_1)
-```
 
-```{r}
 TADA_ViewATTAINS(data = TADA_dataset_2)
+
+# This example doesn't work!
+TADA_ViewATTAINS(data = TADA_dataset_3)
 ```

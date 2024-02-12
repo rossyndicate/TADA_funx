@@ -21,6 +21,8 @@ package_loader <- function(x) {
 packages <- c("tidyverse", "sf", "urltools", "geojsonsf", "leaflet", "viridis", "remotes")
 
 lapply(packages, package_loader)
+
 # install TADA from GitHub using {remotes}
 remotes::install_github("USEPA/TADA", ref = "develop", dependencies = TRUE, force = TRUE)
+
 rm(package_loader)

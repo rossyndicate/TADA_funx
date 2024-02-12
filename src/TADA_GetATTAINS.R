@@ -12,9 +12,32 @@ TADA_GetATTAINS <- function(data){
     
     sf::sf_use_s2(FALSE)
     
+    # Make a reference table for CRS and EPSG codes
+    epsg_codes <- tribble(
+      ~ HorizontalCoordinateReferenceSystemDatumName, ~ epsg,
+      "NAD83", 4269,
+      "WGS84", 4326,
+      "NAD27", 4267,
+      # For now assume these are WGS84. USGS has done this, too. 
+      "UNKWN", 4326,
+      "OTHER", 4326,
+      # There's some others I've encountered too, e.g.
+      "OLDHI", 4135
+    )
+    
     TADA_DataRetrieval_data <- data %>%
-      # Use the USGS projection code (also used in AquaSat) to improve CRS in future iteration of the function!
-      sf::st_as_sf(., coords = c("TADA.LongitudeMeasure", "TADA.LatitudeMeasure"), crs = 4326) %>%
+      # Add EPSG codes
+      left_join(x = .,
+                y = epsg_codes,
+                by = "HorizontalCoordinateReferenceSystemDatumName") %>%
+      # Group by CRS 
+      split(f = .$HorizontalCoordinateReferenceSystemDatumName) %>%
+      # Transform and re-stack
+      map_df(.x = .,
+             .f = ~ .x %>%
+               st_as_sf(coords = c("TADA.LongitudeMeasure", "TADA.LatitudeMeasure"),
+                        crs = unique(.x$epsg)) %>%
+               st_transform(crs = 4326)) %>%
       # add index for identifying obs with more than one ATTAINS assessment unit
       tibble::rowid_to_column(var = "index")
     
