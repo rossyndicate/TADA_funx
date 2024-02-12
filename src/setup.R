@@ -18,7 +18,7 @@ package_loader <- function(x) {
   }
 }
 
-packages <- c("tidyverse", "sf", "urltools", "geojsonsf", "leaflet", "viridis", "remotes")
+packages <- c("tidyverse", "sf", "urltools", "geojsonsf", "leaflet", "viridis", "remotes", "tigris")
 
 lapply(packages, package_loader)
 
