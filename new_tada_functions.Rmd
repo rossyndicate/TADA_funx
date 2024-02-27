@@ -129,7 +129,7 @@ bs_hometown <- TADA_DataRetrieval_new(startDate = "1990-06-01",
                                          sf = tigris::counties(state = "NY") %>% 
                                         filter(NAME == "Cortland"))
 
-test_it_once <- TADA_GetATTAINS(data = TADA_dataset_1, export = TRUE)
+test_it_once <- TADA_GetATTAINS(data = TADA_dataset_1, return = TRUE)
 
 test_it_twice <- TADA_GetATTAINS(data = TADA_dataset_2)
 
@@ -137,13 +137,10 @@ test_it_twice <- TADA_GetATTAINS(data = TADA_dataset_2)
 test_it_thrice <- TADA_GetATTAINS(data = TADA_dataset_3) 
 
 # Test that TADA_GetATTAINS() works on spatial WQP data:
-another_test <- TADA_GetATTAINS(data = TADA_MakeSpatial(TADA_selection_1), export = FALSE)
+another_test <- TADA_GetATTAINS(data = TADA_MakeSpatial(TADA_selection_1), return = FALSE)
 
 # Test that TADA_GetATTAINS() works on non-spatial WQP data:
-and_another_test <- TADA_GetATTAINS(data = TADA_dataset_1, export = FALSE) 
-
-# Test that TADA_GetATTAINS()'s export of ATTAINS geospatial data works (i.e., export = TRUE):
-last_test <- TADA_GetATTAINS(data = TADA_dataset_1, export = TRUE) 
+and_another_test <- TADA_GetATTAINS(data = TADA_dataset_1, return = FALSE) 
 ```
 
 ## `TADA_ViewATTAINS()`
