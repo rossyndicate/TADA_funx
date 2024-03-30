@@ -177,42 +177,69 @@ TADA_DataRetrieval_new <- function(startDate = "null",
                                    providers = "null",
                                    applyautoclean = TRUE) {
   
-  # Ensure sf feature aligns with state/county/huc user inputs (if any of these are input by user)
+  # Ensure sf feature aligns with state/county/huc inputs, if any of these
+  # are provided by user
   if (!is.null(sf) & inherits(sf, "sf")) {
     
     suppressWarnings(suppressMessages({
-      
       sf::sf_use_s2(FALSE)
-      
-      sf_counties <- sf::st_transform(tigris::counties(), sf::st_crs(sf)) %>%
-        .[sf,]
-      
-      sf_states <- sf::st_transform(tigris::states(), sf::st_crs(sf)) %>%
-        .[sf,]
-      
-      sf_hucs <- sf %>%
-        dplyr::summarize() %>%
-        nhdplusTools::get_huc(AOI = ., type = "huc12") %>%
-        dplyr::mutate(huc10 = substr(huc12, 1, 10),
-                      huc8 = substr(huc12, 1, 8),
-                      huc6 = substr(huc12, 1, 6),
-                      huc4 = substr(huc12, 1, 4),
-                      huc2 = substr(huc12, 1, 2))
     }))
     
-    hucs <- c(sf_hucs$huc2, sf_hucs$huc4, sf_hucs$huc6, sf_hucs$huc8, sf_hucs$huc10, sf_hucs$huc12)
-    
-    if (countycode != "null" & countycode %in% sf_counties$NAME != TRUE) {
-      stop("Your shapefile does not overlap your county (or counties) of interest.")
+    # State inputs
+    if(!is.null(statecode)){
+      # Get state bounds
+      suppressWarnings(suppressMessages({
+        sf_states <- sf::st_transform(tigris::states(), sf::st_crs(sf)) %>%
+          .[sf,]
+      }))
+      
+      if (statecode != "null" & statecode %in% sf_states$STUSPS != TRUE) {
+        stop("Your shapefile does not overlap your state(s) of interest.")
+      }
+      
     }
     
-    if (statecode != "null" & statecode %in% sf_states$STUSPS != TRUE) {
-      stop("Your shapefile does not overlap your state(s) of interest.")
+    # County inputs
+    if(!is.null(countycode)){
+      # Get county bounds
+      suppressWarnings(suppressMessages({
+        sf_counties <- sf::st_transform(tigris::counties(), sf::st_crs(sf)) %>%
+          .[sf,]
+      }))
+      
+      if (countycode != "null" & countycode %in% sf_counties$NAME != TRUE) {
+        stop("Your shapefile does not overlap your county (or counties) of interest.")
+      }
+      
     }
     
-    if (huc != "null" & huc %in% hucs != TRUE) {
-      stop("Your shapefile does not overlap your HUC(s) of interest.")
+    # HUC inputs
+    if(!is.null(huc)){
+      # Get HUCs
+      suppressWarnings(suppressMessages({
+        sf_hucs <- sf %>%
+          dplyr::summarize() %>%
+          nhdplusTools::get_huc(AOI = ., type = "huc12") %>%
+          dplyr::mutate(huc10 = substr(huc12, 1, 10),
+                        huc8 = substr(huc12, 1, 8),
+                        huc6 = substr(huc12, 1, 6),
+                        huc4 = substr(huc12, 1, 4),
+                        huc2 = substr(huc12, 1, 2))
+      }))
+      
+      hucs <- c(sf_hucs$huc2, sf_hucs$huc4, sf_hucs$huc6, sf_hucs$huc8,
+                sf_hucs$huc10, sf_hucs$huc12)
+      
+      if (huc != "null" & huc %in% hucs != TRUE) {
+        stop("Your shapefile does not overlap your HUC(s) of interest.")
+      }
+      
     }
+    
+    
+    
+    
+    
     
     # fill in HUC argument to speed up pull if no HUC argument selected by user:
     if (huc == "null") {
