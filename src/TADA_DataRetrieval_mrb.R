@@ -161,20 +161,20 @@
 #' 
 #' 
 #'
-TADA_DataRetrieval_new <- function(startDate = "null",
-                                   endDate = "null",
-                                   countycode = "null",
-                                   huc = "null",
-                                   sf = "null",
-                                   siteid = "null",
-                                   siteType = "null",
-                                   characteristicName = "null",
-                                   characteristicType = "null",
-                                   sampleMedia = "null",
-                                   statecode = "null",
-                                   organization = "null",
-                                   project = "null",
-                                   providers = "null",
+TADA_DataRetrieval_new <- function(startDate = NULL,
+                                   endDate = NULL,
+                                   countycode = NULL,
+                                   huc = NULL,
+                                   sf = NULL,
+                                   siteid = NULL,
+                                   siteType = NULL,
+                                   characteristicName = NULL,
+                                   characteristicType = NULL,
+                                   sampleMedia = NULL,
+                                   statecode = NULL,
+                                   organization = NULL,
+                                   project = NULL,
+                                   providers = NULL,
                                    applyautoclean = TRUE) {
   
   # Ensure sf feature aligns with state/county/huc inputs, if any of these
@@ -193,9 +193,12 @@ TADA_DataRetrieval_new <- function(startDate = "null",
           .[sf,]
       }))
       
-      if (statecode != "null" & statecode %in% sf_states$STUSPS != TRUE) {
+      if (!is.null(statecode) & statecode %in% sf_states$STUSPS != TRUE) {
         stop("Your shapefile does not overlap your state(s) of interest.")
       }
+      
+      rm(sf_states)
+      gc()
       
     }
     
@@ -207,9 +210,12 @@ TADA_DataRetrieval_new <- function(startDate = "null",
           .[sf,]
       }))
       
-      if (countycode != "null" & countycode %in% sf_counties$NAME != TRUE) {
+      if (!is.null(countycode) & countycode %in% sf_counties$NAME != TRUE) {
         stop("Your shapefile does not overlap your county (or counties) of interest.")
       }
+      
+      rm(sf_counties)
+      gc()
       
     }
     
@@ -230,9 +236,12 @@ TADA_DataRetrieval_new <- function(startDate = "null",
       hucs <- c(sf_hucs$huc2, sf_hucs$huc4, sf_hucs$huc6, sf_hucs$huc8,
                 sf_hucs$huc10, sf_hucs$huc12)
       
-      if (huc != "null" & huc %in% hucs != TRUE) {
+      if (!is.null(huc) & huc %in% hucs != TRUE) {
         stop("Your shapefile does not overlap your HUC(s) of interest.")
       }
+      
+      rm(hucs, sf_hucs)
+      gc()
       
     }
     
@@ -242,7 +251,7 @@ TADA_DataRetrieval_new <- function(startDate = "null",
     
     
     # fill in HUC argument to speed up pull if no HUC argument selected by user:
-    if (huc == "null") {
+    if (is.null(huc)) {
       huc <- (sf_hucs$huc10)
     }
   }
@@ -251,13 +260,13 @@ TADA_DataRetrieval_new <- function(startDate = "null",
   WQPquery <- list()
   if (length(statecode) > 1) {
     WQPquery <- c(WQPquery, statecode = list(statecode))
-  } else if (statecode != "null") {
+  } else if (!is.null(statecode)) {
     WQPquery <- c(WQPquery, statecode = statecode)
   }
   
   if (length(huc) > 1) {
     WQPquery <- c(WQPquery, huc = list(huc))
-  } else if (huc != "null") {
+  } else if (!is.null(huc)) {
     WQPquery <- c(WQPquery, huc = huc)
   }
   
@@ -266,7 +275,7 @@ TADA_DataRetrieval_new <- function(startDate = "null",
       stop("Incorrect date format. Please use the format YYYY-MM-DD.")
     }
     WQPquery <- c(WQPquery, startDate = list(startDate))
-  } else if (startDate != "null") {
+  } else if (!is.null(startDate)) {
     if (is.na(suppressWarnings(lubridate::parse_date_time(startDate, orders = "ymd")))) {
       stop("Incorrect date format. Please use the format YYYY-MM-DD.")
     }
@@ -275,55 +284,55 @@ TADA_DataRetrieval_new <- function(startDate = "null",
   
   if (length(countycode) > 1) {
     WQPquery <- c(WQPquery, countycode = list(countycode))
-  } else if (countycode != "null") {
+  } else if (!is.null(countycode)) {
     WQPquery <- c(WQPquery, countycode = countycode)
   }
   
   if (length(siteid) > 1) {
     WQPquery <- c(WQPquery, siteid = list(siteid))
-  } else if (siteid != "null") {
+  } else if (!is.null(siteid)) {
     WQPquery <- c(WQPquery, siteid = siteid)
   }
   
   if (length(siteType) > 1) {
     WQPquery <- c(WQPquery, siteType = list(siteType))
-  } else if (siteType != "null") {
+  } else if (!is.null(siteType)) {
     WQPquery <- c(WQPquery, siteType = siteType)
   }
   
   if (length(characteristicName) > 1) {
     WQPquery <- c(WQPquery, characteristicName = list(characteristicName))
-  } else if (characteristicName != "null") {
+  } else if (!is.null(characteristicName)) {
     WQPquery <- c(WQPquery, characteristicName = characteristicName)
   }
   
   if (length(characteristicType) > 1) {
     WQPquery <- c(WQPquery, characteristicType = list(characteristicType))
-  } else if (characteristicType != "null") {
+  } else if (!is.null(characteristicType)) {
     WQPquery <- c(WQPquery, characteristicType = characteristicType)
   }
   
   if (length(sampleMedia) > 1) {
     WQPquery <- c(WQPquery, sampleMedia = list(sampleMedia))
-  } else if (sampleMedia != "null") {
+  } else if (!is.null(sampleMedia)) {
     WQPquery <- c(WQPquery, sampleMedia = sampleMedia)
   }
   
   if (length(project) > 1) {
     WQPquery <- c(WQPquery, project = list(project))
-  } else if (project != "null") {
+  } else if (!is.null(project)) {
     WQPquery <- c(WQPquery, project = project)
   }
   
   if (length(providers) > 1) {
     WQPquery <- c(WQPquery, providers = list(providers))
-  } else if (providers != "null") {
+  } else if (!is.null(providers)) {
     WQPquery <- c(WQPquery, providers = providers)
   }
   
   if (length(organization) > 1) {
     WQPquery <- c(WQPquery, organization = list(organization))
-  } else if (organization != "null") {
+  } else if (!is.null(organization)) {
     WQPquery <- c(WQPquery, organization = organization)
   }
   
@@ -332,7 +341,7 @@ TADA_DataRetrieval_new <- function(startDate = "null",
       stop("Incorrect date format. Please use the format YYYY-MM-DD.")
     }
     WQPquery <- c(WQPquery, endDate = list(endDate))
-  } else if (endDate != "null") {
+  } else if (!is.null(endDate)) {
     if (is.na(suppressWarnings(lubridate::parse_date_time(endDate, orders = "ymd")))) {
       stop("Incorrect date format. Please use the format YYYY-MM-DD.")
     }
