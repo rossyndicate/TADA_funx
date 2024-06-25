@@ -1,0 +1,420 @@
+---
+title: "Brousil TADA spatial data retrieval testing"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_depth: 2
+date: "`r Sys.Date()`"
+---
+
+In this document I'll be exploring choices for developing a spatial option as input to the `TADA_DataRetrieval()` function.
+
+### Overview
+
+Based on the discussion [here](https://github.com/USEPA/EPATADA/issues/361) the route that makes sense to me currently is to:
+
+1) Accept an sf object as function input from the user
+2) Get a list of WQP sites that occur within that object
+    + For now I'll use the bbox of the sf object to get these from `dataRetrieval::whatWQPsites()` (submitting the other WQP query inputs here too)
+    + Cristina's comment in the GitHub Issue says *"Potentially leverage DR/NLDI/nhdplus tools… or EPA WATERS which has a copy of the WQP sites to get the site IDs within the shapefile boundary and then query the WQP by those specific site IDs."* This makes me wonder if there's a better way to grab site IDs than by using `whatWQPsites()`? I think others may be more aware of those options than me
+3) Spatially clip the sites that fall in the bbox to only those inside the actual shapefile
+4) Assemble WQP query using only site IDs that survived clipping
+5) If an sf object is provided by the user, then ***ignore*** state, count, HUC, etc. arguments that would be redundant with geographic location (and **warn** the user of this) when creating the query
+6) Potentially put some guardrails on the shapefile use? Examples:
+    + Location (within the US?)
+    + Spatial area (like...state sized or smaller?)
+    + If the number of returned sites is > 500(?) then run multiple queries with subsets of sites? Groups of 300 - 500 have worked for me in the past, but I'm not sure if typical use of the function would bring back a result like this
+
+<br>
+
+### Generalizable example
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tigris)
+library(sf)
+library(dataRetrieval)
+library(kableExtra)
+library(scales)
+source("src/TADA_MakeSpatial.R")
+```
+
+#### Clipping to input sf
+
+I'll use a fire perimeter shapefile as an example. I didn't choose it for relevancy but because of its irregular shape and the fact it crosses state boundaries.
+```{r message=FALSE}
+# State shapes for background
+us_states <- states(progress_bar = FALSE)
+
+# From NIFC Historic Perimeters Combined 2000-2018 GeoMAC:
+fire_perim_example <- st_read(
+  dsn = "scratch/Historic_Geomac_Perimeters_Combined_2000_2018_4846657824381415703/US_HIST_FIRE_PERIMTRS_2000_2018_DD83.shp",
+  quiet = TRUE) %>%
+  st_transform(crs = st_crs(us_states))
+
+ggplot() +
+  geom_sf(data = us_states) +
+  geom_sf(data = fire_perim_example, fill = "salmon", linewidth = 0.75) +
+  coord_sf(xlim = c(st_bbox(fire_perim_example)$xmin,
+                    st_bbox(fire_perim_example)$xmax), 
+           ylim = c(st_bbox(fire_perim_example)$ymin,
+                    st_bbox(fire_perim_example)$ymax)) +
+  theme_bw()
+```
+
+<br>
+
+We can now query the WQP for sites within the ***bbox*** of the shapefile.
+```{r}
+# Pretend this is an input sf object
+input_sf <- fire_perim_example
+# Get its bbox
+input_bbox <- st_bbox(input_sf)
+```
+
+Here's the query info we'll use:
+```{r class.source = "fold-show"}
+wqp_request <- list(
+  startDate = "1980-01-01",
+  endDate = Sys.Date(),
+  sampleMedia = c("Water", "water")
+)
+```
+
+
+```{r}
+# Query sites within the bbox
+bbox_sites <- whatWQPsites(
+  wqp_request,
+  bBox = c(input_bbox$xmin, input_bbox$ymin, input_bbox$xmax, input_bbox$ymax)
+)
+
+# Reformat as sf
+bbox_sites_sf <- TADA_MakeSpatial(bbox_sites)
+```
+
+
+Let's see how the bbox results differ from what's actually within the object's boundary
+```{r}
+ggplot() +
+  geom_sf(data = us_states) +
+  geom_sf(data = fire_perim_example, fill = "salmon", linewidth = 0.75) +
+  geom_sf(data = bbox_sites_sf) +
+  coord_sf(xlim = c(input_bbox$xmin,
+                    input_bbox$xmax), 
+           ylim = c(input_bbox$ymin,
+                    input_bbox$ymax)) +
+  theme_bw()
+```
+
+<br>
+
+After making sure they share a CRS we can subset to sites only in the input shape:
+```{r}
+input_sf <- if(st_crs(input_sf) != 4326){
+  input_sf <- st_transform(input_sf, crs = 4326)
+}
+
+clipped_sites_sf <- bbox_sites_sf[input_sf, op = st_intersects]
+
+ggplot() +
+  geom_sf(data = us_states) +
+  geom_sf(data = fire_perim_example, fill = "salmon", linewidth = 0.75) +
+  geom_sf(data = clipped_sites_sf) +
+  coord_sf(xlim = c(input_bbox$xmin,
+                    input_bbox$xmax), 
+           ylim = c(input_bbox$ymin,
+                    input_bbox$ymax)) +
+  theme_bw()
+```
+
+<br>
+
+#### Querying sites
+
+Now that we have the subsetted sites we can run a WQP query. We'll also compare the speed of the differences between querying all sites and just those we've isolated.
+
+Number of rows in the query for the sites isolated by **clipping**:
+```{r message=FALSE}
+clipped_site_ids <- clipped_sites_sf$MonitoringLocationIdentifier
+bbox_site_ids <- bbox_sites_sf$MonitoringLocationIdentifier
+
+clip_query <- readWQPdata(
+  wqp_request,
+  siteid = clipped_site_ids
+)
+nrow(clip_query)
+```
+
+Number of rows in the query for **all sites** in the original bbox:
+```{r message=FALSE}
+bbox_query <- readWQPdata(
+  wqp_request,
+  siteid = bbox_site_ids
+)
+
+nrow(bbox_query)
+```
+
+##### Speed comparison:
+```{r message=FALSE, warning=FALSE}
+bench_check <- microbenchmark::microbenchmark(
+  clipped = readWQPdata(
+    wqp_request,
+    siteid = clipped_site_ids
+  ),
+  bbox =  readWQPdata(
+    wqp_request,
+    siteid = bbox_site_ids
+  ),
+  times = 50L,
+  unit = "seconds"
+)
+
+bench_check
+```
+
+<br>
+
+In this example there's a significant time improvement by querying the WQP with site IDs clipped to the input shapefile. I think we can expect this to vary a lot by the location, shapefile size, scope of the query, etc.
+
+<br>
+
+### `sf` vs state/county codes
+
+Having established that there's a potentially big improvement in speed of a query when submitting subsetted site codes, I'm curious about the difference between using an sf object vs the `statecode`/`countycode` equivalent in a WQP query. I'll try out an example below. (And note that this is not within the overarching context of the larger function, just the raw code that will eventually contribute to its internals).
+
+I'll use an example from a [previous PR](https://github.com/rossyndicate/TADA_funx/pull/5):
+
+<br>
+
+#### 1. pH in 2019 in Maricopa County, Arizona
+
+Here's our basic query info:
+```{r class.source = "fold-show"}
+mc_wqp_request <- list(
+  startDate = "2019-01-01",
+  endDate = "2020-01-01",
+  characteristicName = "pH"
+)
+```
+
+<br>
+
+We'll first apply it using a standard `readWQPdata()` call with `statecode = "AZ"` and `countycode = "Maricopa"`.
+```{r message = FALSE}
+# County code method
+mc_code_query <- readWQPdata(
+  mc_wqp_request,
+  statecode = "AZ",
+  countycode = "Maricopa"
+)
+```
+
+This returns a data frame with `r comma(nrow(mc_code_query))` rows of data.
+
+Next I'll use an sf object of Maricopa County to clip the site IDs to just those within the county boundary and then submit the WQP query.
+
+```{r message = FALSE}
+# sf boundary-to-clip
+mc_sf <- counties(progress_bar = FALSE) %>%
+    filter(NAME == "Maricopa")
+
+# Get its bbox
+mc_input_bbox <- st_bbox(mc_sf)
+
+# Query sites within the bbox
+mc_bbox_sites <- whatWQPsites(
+  mc_wqp_request,
+  bBox = c(mc_input_bbox$xmin, mc_input_bbox$ymin,
+           mc_input_bbox$xmax, mc_input_bbox$ymax)
+)
+
+# Reformat bbox site data as sf
+mc_bbox_sites_sf <- TADA_MakeSpatial(mc_bbox_sites)
+
+# Visual check of full bbox IDs vs actual shapefile
+ggplot() +
+  geom_sf(data = mc_bbox_sites_sf) +
+  geom_sf(data = mc_sf, color = "red", fill = NA, linewidth = 1) +
+  ggtitle("Site IDs returned with Maricopa bbox query") +
+  theme_bw()
+```
+
+```{r message = FALSE}
+# Confirm WGS84
+mc_sf <- if(st_crs(mc_sf) != 4326){
+  mc_sf <- st_transform(mc_sf, crs = 4326)
+}
+
+# Clip site IDs to only within the original shapefile
+mc_clipped_sites_sf <- mc_bbox_sites_sf[mc_sf, op = st_intersects]
+
+# Clipped ID column only
+mc_clipped_site_ids <- mc_clipped_sites_sf$MonitoringLocationIdentifier
+
+# Bbox ID column only
+mc_bbox_site_ids <- mc_bbox_sites_sf$MonitoringLocationIdentifier
+
+# Query based on clipped sites:
+mc_clip_query <- readWQPdata(
+  mc_wqp_request,
+  siteid = mc_clipped_site_ids
+)
+```
+
+The returned dataset contains `r nrow(mc_clip_query)` rows of data from `r length(unique(mc_clip_query$MonitoringLocationIdentifier))` unique `MonitoringLocationIdentifier`s.
+
+Using `compareDF::compare_df()` I check to confirm that the results from the `statecode` version are the same as those from the `sf` version:
+```{r, error=TRUE}
+# Same results as using statecode = "AZ", countycode = "Maricopa"?
+compare_mc_versions <- compareDF::compare_df(
+  df_new = mc_clip_query %>%
+    arrange(OrganizationIdentifier, MonitoringLocationIdentifier,
+            ActivityIdentifier, ActivityStartDateTime),
+  df_old = mc_code_query %>%
+    arrange(OrganizationIdentifier, MonitoringLocationIdentifier,
+            ActivityIdentifier, ActivityStartDateTime)
+)
+```
+
+##### Speed comparison: 
+Let's compare the time that the three options we've considered will take: 1) Using county and state codes, 2) using site IDs from the full bbox, and 3) using site IDs from the clipped area.
+```{r}
+mc_bench_check <- microbenchmark::microbenchmark(
+  # Using the state/county codes
+  county_code_query = suppressMessages(
+    readWQPdata(
+      mc_wqp_request,
+      statecode = "AZ",
+      countycode = "Maricopa"
+    )
+  ),
+  # Using all sites within the bbox of the shapefile boundary
+  sf_bbox_query = suppressMessages(
+    readWQPdata(
+      mc_wqp_request,
+      siteid = mc_bbox_site_ids
+    )),
+  # Using a clipped list of sites within the shapefile boundary
+  sf_clip_query = suppressMessages(
+    readWQPdata(
+      mc_wqp_request,
+      siteid = mc_clipped_site_ids
+    )),
+  times = 50L,
+  unit = "seconds"
+) 
+
+mc_bench_check
+```
+
+These are very comparable!! 
+
+<br>
+
+#### 2. 20 years of Phosphorus in Cook County, IL
+
+How do the above approaches change if we download a larger dataset?
+
+Here's our basic query info:
+
+```{r class.source = "fold-show"}
+cook_wqp_request <- list(
+  startDate = "2000-01-01",
+  endDate = "2020-01-01",
+  characteristicName = "Phosphorus"
+)
+```
+
+<br>
+
+```{r message = FALSE}
+# County code method
+cook_code_query <- readWQPdata(
+  cook_wqp_request,
+  statecode = "IL",
+  countycode = "Cook"
+)
+
+# sf boundary-to-clip
+cook_sf <- counties(progress_bar = FALSE) %>%
+    filter(NAME == "Cook", STATEFP == 17)
+
+# Get its bbox
+cook_input_bbox <- st_bbox(cook_sf)
+
+# Query sites within the bbox
+cook_bbox_sites <- whatWQPsites(
+  cook_wqp_request,
+  bBox = c(cook_input_bbox$xmin, cook_input_bbox$ymin,
+           cook_input_bbox$xmax, cook_input_bbox$ymax)
+)
+
+# Reformat bbox site data as sf
+cook_bbox_sites_sf <- TADA_MakeSpatial(cook_bbox_sites)
+
+# Visual check of full bbox IDs vs actual shapefile
+ggplot() +
+  geom_sf(data = cook_bbox_sites_sf) +
+  geom_sf(data = cook_sf, color = "red", fill = NA, linewidth = 1) +
+  ggtitle("Site IDs returned with Cook bbox query") +
+  theme_bw()
+```
+
+```{r message = FALSE}
+# Confirm WGS84
+cook_sf <- if(st_crs(cook_sf) != 4326){
+  cook_sf <- st_transform(cook_sf, crs = 4326)
+}
+
+# Clip site IDs to only within the original shapefile
+cook_clipped_sites_sf <- cook_bbox_sites_sf[cook_sf, op = st_intersects]
+
+# Clipped ID column only
+cook_clipped_site_ids <- cook_clipped_sites_sf$MonitoringLocationIdentifier
+
+# Bbox ID column only
+cook_bbox_site_ids <- cook_bbox_sites_sf$MonitoringLocationIdentifier
+
+# Query based on clipped sites:
+cook_clip_query <- readWQPdata(
+  cook_wqp_request,
+  siteid = cook_clipped_site_ids
+)
+```
+
+##### Speed comparison: 
+
+```{r}
+cook_bench_check <- microbenchmark::microbenchmark(
+  # Using the state/county codes
+  county_code_query = suppressMessages(
+    readWQPdata(
+      cook_wqp_request,
+      statecode = "IL",
+      countycode = "Cook"
+    )
+  ),
+  # Using a clipped list of sites within the shapefile boundary
+  sf_clip_query = suppressMessages(
+    readWQPdata(
+      cook_wqp_request,
+      siteid = cook_clipped_site_ids
+    )),
+  # Using all sites within the bbox of the shapefile boundary
+  sf_bbox_query = suppressMessages(
+    readWQPdata(
+      cook_wqp_request,
+      siteid = cook_bbox_site_ids
+    )),
+  times = 25L,
+  unit = "seconds"
+) 
+
+cook_bench_check
+```
+
+The `statecode`/`countycode` option is still a clear winner here. 

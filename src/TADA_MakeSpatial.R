@@ -39,6 +39,7 @@ TADA_MakeSpatial <- function(data, crs = 4326){
     "NAD27", 4267,
     # For now assume these are WGS84. USGS has done this, too. 
     "UNKWN", 4326,
+    "Unknown", 4326,
     "OTHER", 4326,
     "OLDHI", 4135
   )
