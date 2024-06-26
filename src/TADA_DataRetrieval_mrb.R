@@ -181,7 +181,7 @@ TADA_DataRetrieval <- function(startDate = NULL,
   WQPquery <- list()
   
   # If an sf object is provided it will be the basis of the query
-  if( !is.null(sf) & inherits(aoi_sf, "sf") ){
+  if( !is.null(aoi_sf) & inherits(aoi_sf, "sf") ){
     # Check for other arguments that indicate location. Function will ignore
     # these inputs but warn the user
     if( any( !is.null(countrycode), !is.null(countycode), !is.null(huc),
@@ -285,7 +285,7 @@ TADA_DataRetrieval <- function(startDate = NULL,
     bbox_sites_sf <- TADA_MakeSpatial(bbox_sites, crs = 4326)
     
     # Subset sites to only within shapefile and get IDs
-    clipped_sites_sf <- bbox_sites_sf[aoi_sf, op = st_intersects]
+    clipped_sites_sf <- bbox_sites_sf[aoi_sf, ]
     
     clipped_site_ids <- clipped_sites_sf$MonitoringLocationIdentifier
     
@@ -294,7 +294,7 @@ TADA_DataRetrieval <- function(startDate = NULL,
       warning(
         paste0(
           "More than 300 sites are matched by the AOI and query terms. ",
-          "It may be more efficient to supply a county, state, coutry, or HUC code instead of an sf object."
+          "If your AOI is a county, state, country, or HUC boundary it would be more efficient to provide a code instead of an sf object."
         )
       )
       
@@ -312,84 +312,39 @@ TADA_DataRetrieval <- function(startDate = NULL,
           WQPquery,
           dataProfile = "resultPhysChem",
           ignore_attributes = TRUE
-        )
+        ) %>%
+          # To allow row binds
+          mutate(across(everything(), as.character))
       ) %>%
-        # To allow row binds
-        mutate(across(everything(), as.character))
-      ) %>%
-  list_rbind()
-
-# check if any results are available
-if ( (nrow(results.DR) > 0 ) == FALSE) {
-  print(
-    paste0(
-      "Returning empty results dataframe: ",
-      "Your WQP query returned no results (no data available). ",
-      "Try a different query. ",
-      "Removing some of your query filters OR broadening your search area may help."
-    )
-    TADAprofile.clean <- results.DR
-} else {
-  sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
-  
-  projects.DR <- dataRetrieval::readWQPdata(WQPquery,
-                                            ignore_attributes = TRUE,
-                                            service = "Project")
-  
-  TADAprofile <- TADA_JoinWQPProfiles(
-    FullPhysChem = results.DR,
-    Sites = sites.DR,
-    Projects = projects.DR
-  )
-  
-  # need to specify this or throws error when trying to bind rows.
-  # Temporary fix for larger issue where data structure for all columns
-  # should be specified.
-  cols <- names(TADAprofile)
-  
-  TADAprofile <- TADAprofile %>% dplyr::mutate_at(cols, as.character)
-  
-  # run TADA_AutoClean function
-  if (applyautoclean == TRUE) {
-    print("Data successfully downloaded. Running TADA_AutoClean function.")
-    
-    TADAprofile.clean <- TADA_AutoClean(TADAprofile)
-  } else {
-    TADAprofile.clean <- TADAprofile
-  }
-}
-
-return(TADAprofile.clean)
-
-# Less than 300 sites:
-    } else {
+        list_rbind()
       
-      # Retrieve all 3 profiles
-      print("Downloading WQP query results. This may take some time depending upon the query size.")
-      print(WQPquery)
-      results.DR <- dataRetrieval::readWQPdata(
-        siteid = clipped_site_ids,
-        WQPquery,
-        dataProfile = "resultPhysChem",
-        ignore_attributes = TRUE
-      )
-      
-      # check if any results are available
-      if ((nrow(results.DR) > 0) == FALSE) {
-        paste0(
-          "Returning empty results dataframe: ",
-          "Your WQP query returned no results (no data available). ",
-          "Try a different query. ",
-          "Removing some of your query filters OR broadening your search area may help."
+      # Check if any results were returned
+      if ( (nrow(results.DR) > 0 ) == FALSE) {
+        print(
+          paste0(
+            "Returning empty results dataframe: ",
+            "Your WQP query returned no results (no data available). ",
+            "Try a different query. ",
+            "Removing some of your query filters OR broadening your search area may help."
+          )
         )
         TADAprofile.clean <- results.DR
       } else {
-        sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
         
-        projects.DR <- dataRetrieval::readWQPdata(WQPquery,
-                                                  ignore_attributes = TRUE,
-                                                  service = "Project")
+        # Get site metadata
+        sites.DR <- clipped_sites_sf %>%
+          as_tibble() %>%
+          select(-geometry)
         
+        # Get project metadata
+        projects.DR <- dataRetrieval::readWQPdata(
+          siteid = clipped_site_ids,
+          WQPquery,
+          ignore_attributes = TRUE,
+          service = "Project"
+        )
+        
+        # Join results, sites, projects
         TADAprofile <- TADA_JoinWQPProfiles(
           FullPhysChem = results.DR,
           Sites = sites.DR,
@@ -399,9 +354,9 @@ return(TADAprofile.clean)
         # need to specify this or throws error when trying to bind rows.
         # Temporary fix for larger issue where data structure for all columns
         # should be specified.
-        cols <- names(TADAprofile)
-        
-        TADAprofile <- TADAprofile %>% dplyr::mutate_at(cols, as.character)
+        TADAprofile <- TADAprofile %>% dplyr::mutate(
+          across(everything(), as.character)
+        )
         
         # run TADA_AutoClean function
         if (applyautoclean == TRUE) {
@@ -415,17 +370,70 @@ return(TADAprofile.clean)
       
       return(TADAprofile.clean)
       
+      # Less than 300 sites:
+    } else {
+      
+      # Retrieve all 3 profiles
+      print("Downloading WQP query results. This may take some time depending upon the query size.")
+      print(WQPquery)
+      
+      # Get results
+      results.DR <- dataRetrieval::readWQPdata(
+        siteid = clipped_site_ids,
+        WQPquery,
+        dataProfile = "resultPhysChem",
+        ignore_attributes = TRUE
+      )
+      
+      # check if any results were returned
+      if ((nrow(results.DR) > 0) == FALSE) {
+        paste0(
+          "Returning empty results dataframe: ",
+          "Your WQP query returned no results (no data available). ",
+          "Try a different query. ",
+          "Removing some of your query filters OR broadening your search area may help."
+        )
+        TADAprofile.clean <- results.DR
+      } else {
+        
+        # Get site metadata
+        sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
+        
+        # Get project metadata
+        projects.DR <- dataRetrieval::readWQPdata(WQPquery,
+                                                  ignore_attributes = TRUE,
+                                                  service = "Project")
+        
+        # Join results, sites, projects
+        TADAprofile <- TADA_JoinWQPProfiles(
+          FullPhysChem = results.DR,
+          Sites = sites.DR,
+          Projects = projects.DR
+        )
+        
+        # need to specify this or throws error when trying to bind rows.
+        # Temporary fix for larger issue where data structure for all columns
+        # should be specified.
+        TADAprofile <- TADAprofile %>% dplyr::mutate(
+          across(everything(), as.character)
+        )
+        
+        # run TADA_AutoClean function
+        if (applyautoclean == TRUE) {
+          print("Data successfully downloaded. Running TADA_AutoClean function.")
+          
+          TADAprofile.clean <- TADA_AutoClean(TADAprofile)
+        } else {
+          TADAprofile.clean <- TADAprofile
+        }
+      }
+      
+      return(TADAprofile.clean)
       
     }
     
-    
-    
-    
-    
-    
-    
+    # If no sf object provided:
   } else {
-    
     
     if (!is.null(statecode)) {
       load(system.file("extdata", "statecodes_df.Rdata", package = "EPATADA"))
@@ -539,16 +547,28 @@ return(TADAprofile.clean)
     )
     # check if any results are available
     if ((nrow(results.DR) > 0) == FALSE) {
-      print("Returning empty results dataframe: Your WQP query returned no results (no data available). Try a different query. Removing some of your query filters OR broadening your search area may help.")
+      print(
+        paste0(
+          "Returning empty results dataframe: ",
+          "Your WQP query returned no results (no data available). ",
+          "Try a different query. ",
+          "Removing some of your query filters OR broadening your search area may help."
+        )
+      )
+      # Get results
       TADAprofile.clean <- results.DR
     } else {
+      
+      # Get site metadata
       sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
       
+      # Get project metadata
       projects.DR <- dataRetrieval::readWQPdata(WQPquery,
                                                 ignore_attributes = TRUE,
                                                 service = "Project"
       )
       
+      # Join results, sites, projects
       TADAprofile <- TADA_JoinWQPProfiles(
         FullPhysChem = results.DR,
         Sites = sites.DR,
@@ -557,9 +577,9 @@ return(TADAprofile.clean)
       
       # need to specify this or throws error when trying to bind rows. Temporary fix for larger
       # issue where data structure for all columns should be specified.
-      cols <- names(TADAprofile)
-      
-      TADAprofile <- TADAprofile %>% dplyr::mutate_at(cols, as.character)
+      TADAprofile <- TADAprofile %>% dplyr::mutate(
+        across(everything(), as.character)
+      )
       
       # run TADA_AutoClean function
       if (applyautoclean == TRUE) {
