@@ -268,7 +268,7 @@ TADA_DataRetrieval <- function(startDate = NULL,
     # sf AOI prep for query
     
     # Match CRS
-    input_sf <- if(sf::st_crs(aoi_sf) != 4326){
+    if(sf::st_crs(aoi_sf) != 4326){
       aoi_sf <- sf::st_transform(aoi_sf, crs = 4326)
     }
     
@@ -307,11 +307,13 @@ TADA_DataRetrieval <- function(startDate = NULL,
       # List of query results
       results.DR <- purrr::map(
         .x = id_cluster_list,
-        .f = ~dataRetrieval::readWQPdata(
-          siteid = .x,
-          WQPquery,
-          dataProfile = "resultPhysChem",
-          ignore_attributes = TRUE
+        .f = ~suppressMessages(
+          dataRetrieval::readWQPdata(
+            siteid = .x,
+            WQPquery,
+            dataProfile = "resultPhysChem",
+            ignore_attributes = TRUE
+          )
         ) %>%
           # To allow row binds
           mutate(across(everything(), as.character))
