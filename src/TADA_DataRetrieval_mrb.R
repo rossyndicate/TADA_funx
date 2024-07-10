@@ -38,7 +38,7 @@
 #' @param countycode FIPS county name. Note that a state code must also be supplied (e.g. statecode = "AL", countycode = "Chilton").
 #' @param huc A numeric code denoting a hydrologic unit. Example: "04030202". Different size hucs can be entered.
 #' @param siteid Unique monitoring location identifier
-#' @param sf A polygon to subset the WQP data by
+#' @param aoi_sf A polygon to subset the WQP data by
 #' @param siteType Type of waterbody
 #' @param characteristicName Name of parameter
 #' @param characteristicType Groups of environmental measurements/parameters.
@@ -161,245 +161,442 @@
 #' 
 #' 
 #'
-TADA_DataRetrieval_new <- function(startDate = NULL,
-                                   endDate = NULL,
-                                   countycode = NULL,
-                                   huc = NULL,
-                                   sf = NULL,
-                                   siteid = NULL,
-                                   siteType = NULL,
-                                   characteristicName = NULL,
-                                   characteristicType = NULL,
-                                   sampleMedia = NULL,
-                                   statecode = NULL,
-                                   organization = NULL,
-                                   project = NULL,
-                                   providers = NULL,
-                                   applyautoclean = TRUE) {
-  
-  # Ensure sf feature aligns with state/county/huc inputs, if any of these
-  # are provided by user
-  if (!is.null(sf) & inherits(sf, "sf")) {
-    
-    suppressWarnings(suppressMessages({
-      sf::sf_use_s2(FALSE)
-    }))
-    
-    # State inputs
-    if(!is.null(statecode)){
-      # Get state bounds
-      suppressWarnings(suppressMessages({
-        sf_states <- sf::st_transform(tigris::states(), sf::st_crs(sf)) %>%
-          .[sf,]
-      }))
-      
-      if (!is.null(statecode) & statecode %in% sf_states$STUSPS != TRUE) {
-        stop("Your shapefile does not overlap your state(s) of interest.")
-      }
-      
-      rm(sf_states)
-      gc()
-      
-    }
-    
-    # County inputs
-    if(!is.null(countycode)){
-      # Get county bounds
-      suppressWarnings(suppressMessages({
-        sf_counties <- sf::st_transform(tigris::counties(), sf::st_crs(sf)) %>%
-          .[sf,]
-      }))
-      
-      if (!is.null(countycode) & countycode %in% sf_counties$NAME != TRUE) {
-        stop("Your shapefile does not overlap your county (or counties) of interest.")
-      }
-      
-      rm(sf_counties)
-      gc()
-      
-    }
-    
-    # HUC inputs
-    if(!is.null(huc)){
-      # Get HUCs
-      suppressWarnings(suppressMessages({
-        sf_hucs <- sf %>%
-          dplyr::summarize() %>%
-          nhdplusTools::get_huc(AOI = ., type = "huc12") %>%
-          dplyr::mutate(huc10 = substr(huc12, 1, 10),
-                        huc8 = substr(huc12, 1, 8),
-                        huc6 = substr(huc12, 1, 6),
-                        huc4 = substr(huc12, 1, 4),
-                        huc2 = substr(huc12, 1, 2))
-      }))
-      
-      hucs <- c(sf_hucs$huc2, sf_hucs$huc4, sf_hucs$huc6, sf_hucs$huc8,
-                sf_hucs$huc10, sf_hucs$huc12)
-      
-      if (!is.null(huc) & huc %in% hucs != TRUE) {
-        stop("Your shapefile does not overlap your HUC(s) of interest.")
-      }
-      
-      rm(hucs, sf_hucs)
-      gc()
-      
-    }
-    
-    
-    
-    
-    
-    
-    # fill in HUC argument to speed up pull if no HUC argument selected by user:
-    if (is.null(huc)) {
-      huc <- (sf_hucs$huc10)
-    }
-  }
-  
+TADA_DataRetrieval <- function(startDate = NULL,
+                               endDate = NULL,
+                               aoi_sf = NULL,
+                               countrycode = NULL,
+                               countycode = NULL,
+                               huc = NULL,
+                               siteid = NULL,
+                               siteType = NULL,
+                               characteristicName = NULL,
+                               characteristicType = NULL,
+                               sampleMedia = NULL,
+                               statecode = NULL,
+                               organization = NULL,
+                               project = NULL,
+                               providers = NULL,
+                               applyautoclean = TRUE) {
   # Set query parameters
   WQPquery <- list()
-  if (length(statecode) > 1) {
-    WQPquery <- c(WQPquery, statecode = list(statecode))
-  } else if (!is.null(statecode)) {
-    WQPquery <- c(WQPquery, statecode = statecode)
-  }
   
-  if (length(huc) > 1) {
-    WQPquery <- c(WQPquery, huc = list(huc))
-  } else if (!is.null(huc)) {
-    WQPquery <- c(WQPquery, huc = huc)
-  }
-  
-  if (length(startDate) > 1) {
-    if (is.na(suppressWarnings(lubridate::parse_date_time(startDate[1], orders = "ymd")))) {
-      stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+  # If an sf object is provided it will be the basis of the query
+  if( !is.null(aoi_sf) & inherits(aoi_sf, "sf") ){
+    # Check for other arguments that indicate location. Function will ignore
+    # these inputs but warn the user
+    if( any( !is.null(countrycode), !is.null(countycode), !is.null(huc),
+             !is.null(siteid), !is.null(statecode) ) ){
+      warning(
+        paste0(
+          "Location information has been provided in addition to an sf object. ",
+          "Only the sf object will be used in the query."
+        )
+      )
     }
-    WQPquery <- c(WQPquery, startDate = list(startDate))
-  } else if (!is.null(startDate)) {
-    if (is.na(suppressWarnings(lubridate::parse_date_time(startDate, orders = "ymd")))) {
-      stop("Incorrect date format. Please use the format YYYY-MM-DD.")
-    }
-    WQPquery <- c(WQPquery, startDate = startDate)
-  }
-  
-  if (length(countycode) > 1) {
-    WQPquery <- c(WQPquery, countycode = list(countycode))
-  } else if (!is.null(countycode)) {
-    WQPquery <- c(WQPquery, countycode = countycode)
-  }
-  
-  if (length(siteid) > 1) {
-    WQPquery <- c(WQPquery, siteid = list(siteid))
-  } else if (!is.null(siteid)) {
-    WQPquery <- c(WQPquery, siteid = siteid)
-  }
-  
-  if (length(siteType) > 1) {
-    WQPquery <- c(WQPquery, siteType = list(siteType))
-  } else if (!is.null(siteType)) {
-    WQPquery <- c(WQPquery, siteType = siteType)
-  }
-  
-  if (length(characteristicName) > 1) {
-    WQPquery <- c(WQPquery, characteristicName = list(characteristicName))
-  } else if (!is.null(characteristicName)) {
-    WQPquery <- c(WQPquery, characteristicName = characteristicName)
-  }
-  
-  if (length(characteristicType) > 1) {
-    WQPquery <- c(WQPquery, characteristicType = list(characteristicType))
-  } else if (!is.null(characteristicType)) {
-    WQPquery <- c(WQPquery, characteristicType = characteristicType)
-  }
-  
-  if (length(sampleMedia) > 1) {
-    WQPquery <- c(WQPquery, sampleMedia = list(sampleMedia))
-  } else if (!is.null(sampleMedia)) {
-    WQPquery <- c(WQPquery, sampleMedia = sampleMedia)
-  }
-  
-  if (length(project) > 1) {
-    WQPquery <- c(WQPquery, project = list(project))
-  } else if (!is.null(project)) {
-    WQPquery <- c(WQPquery, project = project)
-  }
-  
-  if (length(providers) > 1) {
-    WQPquery <- c(WQPquery, providers = list(providers))
-  } else if (!is.null(providers)) {
-    WQPquery <- c(WQPquery, providers = providers)
-  }
-  
-  if (length(organization) > 1) {
-    WQPquery <- c(WQPquery, organization = list(organization))
-  } else if (!is.null(organization)) {
-    WQPquery <- c(WQPquery, organization = organization)
-  }
-  
-  if (length(endDate) > 1) {
-    if (is.na(suppressWarnings(lubridate::parse_date_time(endDate[1], orders = "ymd")))) {
-      stop("Incorrect date format. Please use the format YYYY-MM-DD.")
-    }
-    WQPquery <- c(WQPquery, endDate = list(endDate))
-  } else if (!is.null(endDate)) {
-    if (is.na(suppressWarnings(lubridate::parse_date_time(endDate, orders = "ymd")))) {
-      stop("Incorrect date format. Please use the format YYYY-MM-DD.")
-    }
-    WQPquery <- c(WQPquery, endDate = endDate)
-  }
-  
-  # Retrieve all 3 profiles
-  print("Downloading WQP query results. This may take some time depending upon the query size.")
-  results.DR <- dataRetrieval::readWQPdata(WQPquery,
-                                           dataProfile = "resultPhysChem",
-                                           ignore_attributes = TRUE
-  )
-  # check if any results are available
-  if ((nrow(results.DR) > 0) == FALSE) {
-    print("Returning empty results dataframe: Your WQP query returned no results (no data available). Try a different query. Removing some of your query filters OR broadening your search area may help.")
-    TADAprofile.clean <- results.DR
-  } else {
-    sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
     
-    projects.DR <- dataRetrieval::readWQPdata(WQPquery,
-                                              ignore_attributes = TRUE,
-                                              service = "Project"
+    sf::sf_use_s2(FALSE)
+    
+    # Build the non-sf part of the query:
+    
+    # StartDate
+    if (length(startDate) > 1) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(startDate[1], orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, startDate = list(startDate))
+    } else if (!is.null(startDate)) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(startDate, orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, startDate = startDate)
+    }
+    # SiteType
+    if (length(siteType) > 1) {
+      WQPquery <- c(WQPquery, siteType = list(siteType))
+    } else if (!is.null(siteType)) {
+      WQPquery <- c(WQPquery, siteType = siteType)
+    }
+    # CharacteristicName
+    if (length(characteristicName) > 1) {
+      WQPquery <- c(WQPquery, characteristicName = list(characteristicName))
+    } else if (!is.null(characteristicName)) {
+      WQPquery <- c(WQPquery, characteristicName = characteristicName)
+    }
+    # CharacteristicType
+    if (length(characteristicType) > 1) {
+      WQPquery <- c(WQPquery, characteristicType = list(characteristicType))
+    } else if (!is.null(characteristicType)) {
+      WQPquery <- c(WQPquery, characteristicType = characteristicType)
+    }
+    # SampleMedia
+    if (length(sampleMedia) > 1) {
+      WQPquery <- c(WQPquery, sampleMedia = list(sampleMedia))
+    } else if (!is.null(sampleMedia)) {
+      WQPquery <- c(WQPquery, sampleMedia = sampleMedia)
+    }
+    # Project
+    if (length(project) > 1) {
+      WQPquery <- c(WQPquery, project = list(project))
+    } else if (!is.null(project)) {
+      WQPquery <- c(WQPquery, project = project)
+    }
+    # Provider
+    if (length(providers) > 1) {
+      WQPquery <- c(WQPquery, providers = list(providers))
+    } else if (!is.null(providers)) {
+      WQPquery <- c(WQPquery, providers = providers)
+    }
+    # Organization
+    if (length(organization) > 1) {
+      WQPquery <- c(WQPquery, organization = list(organization))
+    } else if (!is.null(organization)) {
+      WQPquery <- c(WQPquery, organization = organization)
+    }
+    # EndDate
+    if (length(endDate) > 1) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(endDate[1], orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, endDate = list(endDate))
+    } else if (!is.null(endDate)) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(endDate, orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, endDate = endDate)
+    }
+    
+    # sf AOI prep for query
+    
+    # Match CRS
+    if(sf::st_crs(aoi_sf) != 4326){
+      aoi_sf <- sf::st_transform(aoi_sf, crs = 4326)
+    }
+    
+    # Get bbox of the sf object
+    input_bbox <- sf::st_bbox(aoi_sf)
+    
+    # Query site info within the bbox
+    bbox_sites <- dataRetrieval::whatWQPsites(
+      WQPquery,
+      bBox = c(input_bbox$xmin, input_bbox$ymin, input_bbox$xmax, input_bbox$ymax)
     )
     
-    TADAprofile <- TADA_JoinWQPProfiles(
-      FullPhysChem = results.DR,
-      Sites = sites.DR,
-      Projects = projects.DR
-    )
+    # Reformat returned info as sf
+    bbox_sites_sf <- TADA_MakeSpatial(bbox_sites, crs = 4326)
     
-    # need to specify this or throws error when trying to bind rows. Temporary fix for larger
-    # issue where data structure for all columns should be specified.
-    cols <- names(TADAprofile)
+    # Subset sites to only within shapefile and get IDs
+    clipped_sites_sf <- bbox_sites_sf[aoi_sf, ]
     
-    TADAprofile <- TADAprofile %>% dplyr::mutate_at(cols, as.character)
+    clipped_site_ids <- clipped_sites_sf$MonitoringLocationIdentifier
     
-    # run TADA_AutoClean function
-    if (applyautoclean == TRUE) {
-      print("Data successfully downloaded. Running TADA_AutoClean function.")
+    # Check number of sites returned. More than 300 will require a map() approach
+    if( length(clipped_site_ids) > 300 ) {
+      warning(
+        paste0(
+          "More than 300 sites are matched by the AOI and query terms. ",
+          "If your AOI is a county, state, country, or HUC boundary it would be more efficient to provide a code instead of an sf object."
+        )
+      )
       
-      TADAprofile.clean <- TADA_AutoClean(TADAprofile)
+      # Split IDs into a list
+      id_cluster_list <- split(x = clipped_site_ids,
+                               f = ceiling(seq_along(clipped_site_ids) / 300))
+      
+      print("Downloading WQP query results. This may take some time depending upon the query size.")
+      
+      # List of query results
+      results.DR <- purrr::map(
+        .x = id_cluster_list,
+        .f = ~suppressMessages(
+          dataRetrieval::readWQPdata(
+            siteid = .x,
+            WQPquery,
+            dataProfile = "resultPhysChem",
+            ignore_attributes = TRUE
+          )
+        ) %>%
+          # To allow row binds
+          mutate(across(everything(), as.character))
+      ) %>%
+        list_rbind()
+      
+      # Check if any results were returned
+      if ( (nrow(results.DR) > 0 ) == FALSE) {
+        print(
+          paste0(
+            "Returning empty results dataframe: ",
+            "Your WQP query returned no results (no data available). ",
+            "Try a different query. ",
+            "Removing some of your query filters OR broadening your search area may help."
+          )
+        )
+        TADAprofile.clean <- results.DR
+      } else {
+        
+        # Get site metadata
+        sites.DR <- clipped_sites_sf %>%
+          as_tibble() %>%
+          select(-geometry)
+        
+        # Get project metadata
+        projects.DR <- dataRetrieval::readWQPdata(
+          siteid = clipped_site_ids,
+          WQPquery,
+          ignore_attributes = TRUE,
+          service = "Project"
+        )
+        
+        # Join results, sites, projects
+        TADAprofile <- TADA_JoinWQPProfiles(
+          FullPhysChem = results.DR,
+          Sites = sites.DR,
+          Projects = projects.DR
+        )
+        
+        # need to specify this or throws error when trying to bind rows.
+        # Temporary fix for larger issue where data structure for all columns
+        # should be specified.
+        TADAprofile <- TADAprofile %>% dplyr::mutate(
+          across(everything(), as.character)
+        )
+        
+        # run TADA_AutoClean function
+        if (applyautoclean == TRUE) {
+          print("Data successfully downloaded. Running TADA_AutoClean function.")
+          
+          TADAprofile.clean <- TADA_AutoClean(TADAprofile)
+        } else {
+          TADAprofile.clean <- TADAprofile
+        }
+      }
+      
+      return(TADAprofile.clean)
+      
+      # Less than 300 sites:
     } else {
-      TADAprofile.clean <- TADAprofile
+      
+      # Retrieve all 3 profiles
+      print("Downloading WQP query results. This may take some time depending upon the query size.")
+      print(WQPquery)
+      
+      # Get results
+      results.DR <- dataRetrieval::readWQPdata(
+        siteid = clipped_site_ids,
+        WQPquery,
+        dataProfile = "resultPhysChem",
+        ignore_attributes = TRUE
+      )
+      
+      # check if any results were returned
+      if ((nrow(results.DR) > 0) == FALSE) {
+        paste0(
+          "Returning empty results dataframe: ",
+          "Your WQP query returned no results (no data available). ",
+          "Try a different query. ",
+          "Removing some of your query filters OR broadening your search area may help."
+        )
+        TADAprofile.clean <- results.DR
+      } else {
+        
+        # Get site metadata
+        sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
+        
+        # Get project metadata
+        projects.DR <- dataRetrieval::readWQPdata(WQPquery,
+                                                  ignore_attributes = TRUE,
+                                                  service = "Project")
+        
+        # Join results, sites, projects
+        TADAprofile <- TADA_JoinWQPProfiles(
+          FullPhysChem = results.DR,
+          Sites = sites.DR,
+          Projects = projects.DR
+        )
+        
+        # need to specify this or throws error when trying to bind rows.
+        # Temporary fix for larger issue where data structure for all columns
+        # should be specified.
+        TADAprofile <- TADAprofile %>% dplyr::mutate(
+          across(everything(), as.character)
+        )
+        
+        # run TADA_AutoClean function
+        if (applyautoclean == TRUE) {
+          print("Data successfully downloaded. Running TADA_AutoClean function.")
+          
+          TADAprofile.clean <- TADA_AutoClean(TADAprofile)
+        } else {
+          TADAprofile.clean <- TADAprofile
+        }
+      }
+      
+      return(TADAprofile.clean)
+      
     }
+    
+    # If no sf object provided:
+  } else {
+    
+    if (!is.null(statecode)) {
+      load(system.file("extdata", "statecodes_df.Rdata", package = "EPATADA"))
+      statecode <- as.character(statecode)
+      statecodes_sub <- statecodes_df %>% dplyr::filter(STUSAB %in% statecode)
+      statecd <- paste0("US:", statecodes_sub$STATE)
+      if (nrow(statecodes_sub) == 0) {
+        stop("State code is not valid. Check FIPS state/territory abbreviations.")
+      }
+      if (length(statecode) >= 1) {
+        WQPquery <- c(WQPquery, statecode = list(statecd))
+      }
+    }
+    
+    if (length(huc) > 1) {
+      WQPquery <- c(WQPquery, huc = list(huc))
+    } else if (!is.null(huc)) {
+      WQPquery <- c(WQPquery, huc = huc)
+    }
+    
+    if (length(startDate) > 1) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(startDate[1], orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, startDate = list(startDate))
+    } else if (!is.null(startDate)) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(startDate, orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, startDate = startDate)
+    }
+    
+    if (length(countrycode) > 1) {
+      WQPquery <- c(WQPquery, countrycode = list(countrycode))
+    } else if (!is.null(countrycode)) {
+      WQPquery <- c(WQPquery, countrycode = countrycode)
+    }
+    
+    if (length(countycode) > 1) {
+      WQPquery <- c(WQPquery, countycode = list(countycode))
+    } else if (!is.null(countycode)) {
+      WQPquery <- c(WQPquery, countycode = countycode)
+    }
+    
+    if (length(siteid) > 1) {
+      WQPquery <- c(WQPquery, siteid = list(siteid))
+    } else if (!is.null(siteid)) {
+      WQPquery <- c(WQPquery, siteid = siteid)
+    }
+    
+    if (length(siteType) > 1) {
+      WQPquery <- c(WQPquery, siteType = list(siteType))
+    } else if (!is.null(siteType)) {
+      WQPquery <- c(WQPquery, siteType = siteType)
+    }
+    
+    if (length(characteristicName) > 1) {
+      WQPquery <- c(WQPquery, characteristicName = list(characteristicName))
+    } else if (!is.null(characteristicName)) {
+      WQPquery <- c(WQPquery, characteristicName = characteristicName)
+    }
+    
+    if (length(characteristicType) > 1) {
+      WQPquery <- c(WQPquery, characteristicType = list(characteristicType))
+    } else if (!is.null(characteristicType)) {
+      WQPquery <- c(WQPquery, characteristicType = characteristicType)
+    }
+    
+    if (length(sampleMedia) > 1) {
+      WQPquery <- c(WQPquery, sampleMedia = list(sampleMedia))
+    } else if (!is.null(sampleMedia)) {
+      WQPquery <- c(WQPquery, sampleMedia = sampleMedia)
+    }
+    
+    if (length(project) > 1) {
+      WQPquery <- c(WQPquery, project = list(project))
+    } else if (!is.null(project)) {
+      WQPquery <- c(WQPquery, project = project)
+    }
+    
+    if (length(providers) > 1) {
+      WQPquery <- c(WQPquery, providers = list(providers))
+    } else if (!is.null(providers)) {
+      WQPquery <- c(WQPquery, providers = providers)
+    }
+    
+    if (length(organization) > 1) {
+      WQPquery <- c(WQPquery, organization = list(organization))
+    } else if (!is.null(organization)) {
+      WQPquery <- c(WQPquery, organization = organization)
+    }
+    
+    if (length(endDate) > 1) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(endDate[1], orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, endDate = list(endDate))
+    } else if (!is.null(endDate)) {
+      if (is.na(suppressWarnings(lubridate::parse_date_time(endDate, orders = "ymd")))) {
+        stop("Incorrect date format. Please use the format YYYY-MM-DD.")
+      }
+      WQPquery <- c(WQPquery, endDate = endDate)
+    }
+    
+    # Retrieve all 3 profiles
+    print("Downloading WQP query results. This may take some time depending upon the query size.")
+    print(WQPquery)
+    results.DR <- dataRetrieval::readWQPdata(WQPquery,
+                                             dataProfile = "resultPhysChem",
+                                             ignore_attributes = TRUE
+    )
+    # check if any results are available
+    if ((nrow(results.DR) > 0) == FALSE) {
+      print(
+        paste0(
+          "Returning empty results dataframe: ",
+          "Your WQP query returned no results (no data available). ",
+          "Try a different query. ",
+          "Removing some of your query filters OR broadening your search area may help."
+        )
+      )
+      # Get results
+      TADAprofile.clean <- results.DR
+    } else {
+      
+      # Get site metadata
+      sites.DR <- dataRetrieval::whatWQPsites(WQPquery)
+      
+      # Get project metadata
+      projects.DR <- dataRetrieval::readWQPdata(WQPquery,
+                                                ignore_attributes = TRUE,
+                                                service = "Project"
+      )
+      
+      # Join results, sites, projects
+      TADAprofile <- TADA_JoinWQPProfiles(
+        FullPhysChem = results.DR,
+        Sites = sites.DR,
+        Projects = projects.DR
+      )
+      
+      # need to specify this or throws error when trying to bind rows. Temporary fix for larger
+      # issue where data structure for all columns should be specified.
+      TADAprofile <- TADAprofile %>% dplyr::mutate(
+        across(everything(), as.character)
+      )
+      
+      # run TADA_AutoClean function
+      if (applyautoclean == TRUE) {
+        print("Data successfully downloaded. Running TADA_AutoClean function.")
+        
+        TADAprofile.clean <- TADA_AutoClean(TADAprofile)
+      } else {
+        TADAprofile.clean <- TADAprofile
+      }
+    }
+    
+    return(TADAprofile.clean)
+    
+    
   }
   
-  # subset original dataframe to only those WQP observations within the user-supplied sf:
-  if (!is.null(sf) & inherits(sf, "sf")) {
-    try(TADAprofile.clean <- TADAprofile.clean %>%
-          # transform df into spatial object using a new TADA_MakeSpatial() function
-          TADA_MakeSpatial(data = ., crs = 4326) %>%
-          # transform to the CRS of the sf object
-          sf::st_transform(sf::st_crs(sf)) %>%
-          # select only WQP observations within the sf object
-          .[sf, ] %>%
-          sf::st_drop_geometry(),
-        silent = TRUE)
-  }
   
-  return(TADAprofile.clean)
 }
