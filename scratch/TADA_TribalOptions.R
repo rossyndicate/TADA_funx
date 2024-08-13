@@ -41,7 +41,7 @@ TADA_TribalOptions <- function(tribal_area_type, return_sf = FALSE){
   
   # Confirm usable string provided
   if( !(tribal_area_type %in% map_service_urls$tribal_area) ){
-    stop("tribal_area_type must match one of the six tribal spatial layers.")
+    stop("tribal_area_type must match one of the six tribal spatial layer names.")
   }
   
   # Query Map Service
