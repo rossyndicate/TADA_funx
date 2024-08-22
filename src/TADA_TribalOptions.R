@@ -55,7 +55,7 @@ TADA_TribalOptions <- function(tribal_area_type, return_sf = FALSE){
   if(return_sf == FALSE){
     return(
       as.data.frame(tribal_area_sf) %>%
-        dplyr::select(-geometry)
+        sf::st_drop_geometry()
     )
   } else {
     return(tribal_area_sf)
