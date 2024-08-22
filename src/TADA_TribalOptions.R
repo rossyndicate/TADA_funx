@@ -12,6 +12,9 @@
 #' data in those datasets and identify the records they would like to query with
 #' `TADA_DataRetrieval()`.
 #' 
+#' An interactive map of the six layer datasets is available on ArcGIS Online Map
+#' Viewer here: https://www.arcgis.com/apps/mapviewer/index.html?url=https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer&source=sd
+#' 
 #' @param tribal_area_type A character string. Must be one of the six tribal
 #' spatial layers: "Alaska Native Allotments", "Alaska Native Villages", 
 #' "American Indian Reservations", "Off-reservation Trust Lands",
