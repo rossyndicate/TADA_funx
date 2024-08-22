@@ -54,6 +54,12 @@
 #'
 #' @return TADA-compatible dataframe
 #'
+#' @note
+#' Alaska Native Villages and Virginia Federally Recognized Tribes are point
+#' geometries in the Map Service, not polygons. At the time of this writing they
+#' do not return any data when used for WQP bbox queries and so are set to return
+#' errors when used with this function.
+#'
 #' @export
 #'
 #' @examples
@@ -341,6 +347,14 @@ TADA_DataRetrieval_test <- function(startDate = NULL,
                                  "Oklahoma Tribal Statistical Areas",
                                  "Virginia Federally Recognized Tribes")
       ){
+        
+        # Two layers will not return any data when used for bboxes
+        if(tribal_area_type == "Alaska Native Villages"){
+          stop("Alaska Native Villages data are centroid points, not spatial boundaries.")
+        } else if(tribal_area_type == "Virginia Federally Recognized Tribes") {
+          stop("Federally recognized tribal entities in Virginia do not have any available spatial boundaries.")
+        }
+        
         # Get the relevant url
         aoi_sf <- filter(map_service_urls,
                          tribal_area == tribal_area_type)$url %>%

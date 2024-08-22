@@ -23,6 +23,11 @@
 #' @returns A data frame or `sf` object containing the specified layer from the EPA
 #' Map Service.
 #' 
+#' @note
+#' Alaska Native Villages and Virginia Federally Recognized Tribes are point
+#' geometries in the Map Service, not polygons. At the time of this writing they
+#' do not return any data when used for WQP bbox queries.
+#' 
 #' @seealso [TADA_DataRetrieval()]
 #' 
 
@@ -49,7 +54,8 @@ TADA_TribalOptions <- function(tribal_area_type, return_sf = FALSE){
                                   tribal_area == tribal_area_type)$url %>%
     arcgislayers::arc_open() %>%
     # Return sf
-    arcgislayers::arc_select()
+    arcgislayers::arc_select() %>%
+    sf::st_make_valid()
   
   # Convert to df if needed, export
   if(return_sf == FALSE){
