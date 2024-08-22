@@ -35,11 +35,14 @@
 #'
 #' @param startDate Start Date string in the format YYYY-MM-DD, for example, "2020-01-01"
 #' @param endDate End Date string in the format YYYY-MM-DD, for example, "2020-01-01"
+#' @param aoi_sf An sf object to use for a query area of interest
 #' @param countycode FIPS county name. Note that a state code must also be supplied (e.g. statecode = "AL", countycode = "Chilton").
 #' @param huc A numeric code denoting a hydrologic unit. Example: "04030202". Different size hucs can be entered.
 #' @param siteid Unique monitoring location identifier
 #' @param aoi_sf A polygon to subset the WQP data by
 #' @param siteType Type of waterbody
+#' @param tribal_area_type One of the six tribal spatial layers: "Alaska Native Allotments", "Alaska Native Villages",  "American Indian Reservations", "Off-reservation Trust Lands", "Oklahoma Tribal Statistical Areas", or "Virginia Federally Recognized Tribes".
+#' @param tribe_name_parcel The name of a tribe corresponding to an entry in the TRIBE_NAME field of the specified tribal_area_type. OR if the type is Alaska Native Allotments" then the corresponding PARCEL_NO.
 #' @param characteristicName Name of parameter
 #' @param characteristicType Groups of environmental measurements/parameters.
 #' @param sampleMedia Sampling substrate such as water, air, or sediment
@@ -50,6 +53,12 @@
 #' @param applyautoclean Logical, defaults to TRUE. Applies TADA_AutoClean function on the returned data profile.
 #'
 #' @return TADA-compatible dataframe
+#'
+#' @note
+#' Alaska Native Villages and Virginia Federally Recognized Tribes are point
+#' geometries in the Map Service, not polygons. At the time of this writing they
+#' do not return any data when used for WQP bbox queries and so are set to return
+#' errors when used with this function.
 #'
 #' @export
 #'
@@ -155,44 +164,89 @@
 #' TADA_selection_1 <- TADA_DataRetrieval_new(startDate = "1995-01-01",
 #'                                           endDate = "1998-08-05",
 #'                                           characteristicName = "pH",
-#'                                           sf = sf_example)
+#'                                           aoi_sf = sf_example)
 #' 
 #' 
 #' 
 #' 
 #'
-TADA_DataRetrieval <- function(startDate = NULL,
-                               endDate = NULL,
-                               aoi_sf = NULL,
-                               countrycode = NULL,
-                               countycode = NULL,
-                               huc = NULL,
-                               siteid = NULL,
-                               siteType = NULL,
-                               characteristicName = NULL,
-                               characteristicType = NULL,
-                               sampleMedia = NULL,
-                               statecode = NULL,
-                               organization = NULL,
-                               project = NULL,
-                               providers = NULL,
-                               applyautoclean = TRUE) {
+TADA_DataRetrieval_test <- function(startDate = NULL,
+                                    endDate = NULL,
+                                    aoi_sf = NULL,
+                                    countrycode = NULL,
+                                    countycode = NULL,
+                                    huc = NULL,
+                                    siteid = NULL,
+                                    siteType = NULL,
+                                    tribal_area_type = NULL,
+                                    tribe_name_parcel = NULL,
+                                    characteristicName = NULL,
+                                    characteristicType = NULL,
+                                    sampleMedia = NULL,
+                                    statecode = NULL,
+                                    organization = NULL,
+                                    project = NULL,
+                                    providers = NULL,
+                                    applyautoclean = TRUE) {
+  
+  
+  # Check for incomplete or inconsistent inputs:
+  
+  # If both an sf object and tribe information are provided it's unclear what
+  # the priority should be for the query
+  if( !is.null(aoi_sf) & (!is.null(tribal_area_type) |
+                          !is.null(tribe_name_parcel)) ){
+    stop(
+      paste0(
+        "Both sf data and tribal information have been provided. ",
+        "Please use only one of these query options."
+      )
+    )
+  } 
+  
+  # Check for other arguments that indicate location. Function will ignore
+  # these inputs but warn the user
+  if( 
+    # sf object provided
+    (!is.null(aoi_sf) & inherits(aoi_sf, "sf")) & 
+    # with additional location info
+    any( !is.null(countrycode), !is.null(countycode), !is.null(huc),
+         !is.null(siteid), !is.null(statecode) )
+  ){
+    warning(
+      paste0(
+        "Location information has been provided in addition to an sf object. ",
+        "Only the sf object will be used in the query."
+      )
+    )
+  } else if(
+    # Tribe info provided
+    !is.null(tribal_area_type) & 
+    # with additional location info
+    any( !is.null(countrycode), !is.null(countycode), !is.null(huc),
+         !is.null(siteid), !is.null(statecode) )
+  ){
+    warning(
+      paste0(
+        "Location information has been provided in addition to tribal information. ",
+        "Only the tribal information will be used in the query."
+      )
+    )
+  }
+  
+  # Insufficient tribal info provided
+  if( is.null(tribal_area_type) & !is.null(tribe_name_parcel) ){
+    stop("A tribal_area_type is required if tribe_name_parcel is provided.")
+  }
+  
+  
   # Set query parameters
   WQPquery <- list()
   
-  # If an sf object is provided it will be the basis of the query
-  if( !is.null(aoi_sf) & inherits(aoi_sf, "sf") ){
-    # Check for other arguments that indicate location. Function will ignore
-    # these inputs but warn the user
-    if( any( !is.null(countrycode), !is.null(countycode), !is.null(huc),
-             !is.null(siteid), !is.null(statecode) ) ){
-      warning(
-        paste0(
-          "Location information has been provided in addition to an sf object. ",
-          "Only the sf object will be used in the query."
-        )
-      )
-    }
+  
+  # If an sf object OR tribal info are provided they will be the basis of the query
+  # (The tribal data handling uses sf objects as well)
+  if( (!is.null(aoi_sf) & inherits(aoi_sf, "sf")) | !is.null(tribal_area_type) ){
     
     sf::sf_use_s2(FALSE)
     
@@ -267,6 +321,73 @@ TADA_DataRetrieval <- function(startDate = NULL,
     
     # sf AOI prep for query
     
+    # If tribe info is provided then grab the corresponding sf object:
+    if(!is.null(tribal_area_type)){
+      
+      # Make a reference table for tribal area type + url matching
+      map_service_urls <- tibble::tribble(
+        ~tribal_area,                            ~url,
+        "Alaska Native Allotments",              "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/0",
+        "Alaska Native Villages",                "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/1",
+        "American Indian Reservations",          "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/2",
+        "Off-reservation Trust Lands",           "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/3",
+        "Oklahoma Tribal Statistical Areas",     "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/4",
+        "Virginia Federally Recognized Tribes",  "https://geopub.epa.gov/arcgis/rest/services/EMEF/Tribal/MapServer/5"
+      )
+      
+      # Keep to a single type:
+      if(length(tribal_area_type) > 1){
+        stop("tribal_area_type must be of length 1.")
+      }
+      
+      # These area types allow filtering by TRIBE_NAME (unique within each type)
+      if(tribal_area_type %in% c("Alaska Native Villages",
+                                 "American Indian Reservations",
+                                 "Off-reservation Trust Lands",
+                                 "Oklahoma Tribal Statistical Areas",
+                                 "Virginia Federally Recognized Tribes")
+      ){
+        
+        # Two layers will not return any data when used for bboxes
+        if(tribal_area_type == "Alaska Native Villages"){
+          stop("Alaska Native Villages data are centroid points, not spatial boundaries.")
+        } else if(tribal_area_type == "Virginia Federally Recognized Tribes") {
+          stop("Federally recognized tribal entities in Virginia do not have any available spatial boundaries.")
+        }
+        
+        # Get the relevant url
+        aoi_sf <- filter(map_service_urls,
+                         tribal_area == tribal_area_type)$url %>%
+          # Pull data
+          arcgislayers::arc_open() %>%
+          # Return sf
+          arcgislayers::arc_select() %>%
+          # If a value provided, then filter
+          {if ((tribe_name_parcel != "null") & (!is.null(tribe_name_parcel))) {
+            filter(., TRIBE_NAME %in% tribe_name_parcel)
+          } else {
+            .
+          }}
+        
+        # Otherwise filter by PARCEL_NO (Note that values in this col are not unique)
+      } else if(tribal_area_type == "Alaska Native Allotments"){
+        
+        aoi_sf <- filter(map_service_urls,
+                         tribal_area == tribal_area_type)$url %>%
+          arcgislayers::arc_open() %>%
+          arcgislayers::arc_select() %>%
+          {if ((tribe_name_parcel != "null") & (!is.null(tribe_name_parcel))) {
+            filter(., PARCEL_NO %in% tribe_name_parcel)
+          } else {
+            .
+          }}
+        
+      } else {
+        stop("Tribal area type not recognized. Refer to TADA_TribalOptions() for query options.")
+      }
+      
+    }
+    
     # Match CRS
     if(sf::st_crs(aoi_sf) != 4326){
       aoi_sf <- sf::st_transform(aoi_sf, crs = 4326)
@@ -281,8 +402,13 @@ TADA_DataRetrieval <- function(startDate = NULL,
       bBox = c(input_bbox$xmin, input_bbox$ymin, input_bbox$xmax, input_bbox$ymax)
     )
     
+    # Check if any sites are within the aoi
+    if ( (nrow(bbox_sites) > 0 ) == FALSE) {
+      stop("No monitoring sites were returned within your area of interest (no data available).")
+    }
+    
     # Reformat returned info as sf
-    bbox_sites_sf <- TADA_MakeSpatial(bbox_sites, crs = 4326)
+    bbox_sites_sf <- EPATADA::TADA_MakeSpatial(bbox_sites, crs = 4326)
     
     # Subset sites to only within shapefile and get IDs
     clipped_sites_sf <- bbox_sites_sf[aoi_sf, ]
@@ -594,7 +720,6 @@ TADA_DataRetrieval <- function(startDate = NULL,
     }
     
     return(TADAprofile.clean)
-    
     
   }
   
